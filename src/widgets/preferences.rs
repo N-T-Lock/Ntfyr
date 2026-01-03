@@ -13,10 +13,12 @@ mod imp {
     use super::*;
 
     #[derive(gtk::CompositeTemplate)]
-    #[template(resource = "/com/ranfdev/Notify/ui/preferences.ui")]
-    pub struct NotifyPreferences {
+    #[template(resource = "/io/github/tobagin/Ntfyr/ui/preferences.ui")]
+    pub struct NtfyrPreferences {
         #[template_child]
         pub startup_switch: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub sort_descending_switch: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub server_entry: TemplateChild<adw::EntryRow>,
         #[template_child]
@@ -32,10 +34,11 @@ mod imp {
         pub notifier: OnceCell<NtfyHandle>,
     }
 
-    impl Default for NotifyPreferences {
+    impl Default for NtfyrPreferences {
         fn default() -> Self {
             let this = Self {
                 startup_switch: Default::default(),
+                sort_descending_switch: Default::default(),
                 server_entry: Default::default(),
                 username_entry: Default::default(),
                 password_entry: Default::default(),
@@ -50,9 +53,9 @@ mod imp {
     }
 
     #[glib::object_subclass]
-    impl ObjectSubclass for NotifyPreferences {
-        const NAME: &'static str = "NotifyPreferences";
-        type Type = super::NotifyPreferences;
+    impl ObjectSubclass for NtfyrPreferences {
+        const NAME: &'static str = "NtfyrPreferences";
+        type Type = super::NtfyrPreferences;
         type ParentType = adw::PreferencesDialog;
 
         fn class_init(klass: &mut Self::Class) {
@@ -64,20 +67,20 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for NotifyPreferences {}
+    impl ObjectImpl for NtfyrPreferences {}
 
-    impl WidgetImpl for NotifyPreferences {}
-    impl AdwDialogImpl for NotifyPreferences {}
-    impl PreferencesDialogImpl for NotifyPreferences {}
+    impl WidgetImpl for NtfyrPreferences {}
+    impl AdwDialogImpl for NtfyrPreferences {}
+    impl PreferencesDialogImpl for NtfyrPreferences {}
 }
 
 glib::wrapper! {
-    pub struct NotifyPreferences(ObjectSubclass<imp::NotifyPreferences>)
+    pub struct NtfyrPreferences(ObjectSubclass<imp::NtfyrPreferences>)
         @extends gtk::Widget, adw::Dialog, adw::PreferencesDialog,
         @implements gio::ActionMap, gio::ActionGroup, gtk::Root, gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Native, gtk::ShortcutManager;
 }
 
-impl NotifyPreferences {
+impl NtfyrPreferences {
     pub fn new(notifier: ntfy_daemon::NtfyHandle) -> Self {
         let obj: Self = glib::Object::builder().build();
         obj.imp()
@@ -90,43 +93,11 @@ impl NotifyPreferences {
         settings
             .bind("run-on-startup", &*obj.imp().startup_switch, "active")
             .build();
+        settings
+            .bind("sort-descending", &*obj.imp().sort_descending_switch, "active")
+            .build();
 
-        settings.connect_changed(Some("run-on-startup"), move |settings, _| {
-            let enabled = settings.boolean("run-on-startup");
-            // Autostart Logic
-            let app_id = crate::config::APP_ID;
-            // Use home_dir() to escape Flatpak sandbox XDG_CONFIG_HOME
-            let autostart_dir = glib::home_dir().join(".config").join("autostart");
-            let desktop_path = autostart_dir.join(format!("{}.desktop", app_id));
-
-            if enabled {
-                if let Err(e) = std::fs::create_dir_all(&autostart_dir) {
-                    eprintln!("Failed to create autostart dir: {}", e);
-                    return;
-                }
-                let name = if app_id.ends_with("Devel") { "Notify (Dev)" } else { "Notify" };
-                
-                // Note: This assumes Flatpak environment mostly
-                let exec_cmd = format!("flatpak run {}", app_id);
-                let content = format!(
-                    "[Desktop Entry]\n\
-                     Type=Application\n\
-                     Name={}\n\
-                     Exec={}\n\
-                     Icon={}\n\
-                     X-GNOME-Autostart-enabled=true\n",
-                    name, exec_cmd, app_id
-                );
-                
-                if let Err(e) = std::fs::write(&desktop_path, content) {
-                     eprintln!("Failed to write autostart file: {}", e);
-                }
-            } else {
-                if desktop_path.exists() {
-                    let _ = std::fs::remove_file(desktop_path);
-                }
-            }
-        });
+        // settings.connect_changed("run-on-startup") handled in application.rs
 
         let this = obj.clone();
         obj.imp().add_btn.connect_clicked(move |btn| {

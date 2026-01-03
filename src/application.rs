@@ -12,7 +12,6 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::{APP_ID, PKGDATADIR, PROFILE, VERSION};
 use crate::widgets::*;
-use anyhow::Context;
 
 mod imp {
     use std::cell::RefCell;
@@ -23,30 +22,30 @@ mod imp {
     use super::*;
 
     #[derive(Default)]
-    pub struct NotifyApplication {
-        pub window: RefCell<WeakRef<NotifyWindow>>,
+    pub struct NtfyrApplication {
+        pub window: RefCell<WeakRef<NtfyrWindow>>,
         pub hold_guard: OnceCell<gio::ApplicationHoldGuard>,
         pub ntfy: OnceCell<NtfyHandle>,
     }
 
     #[glib::object_subclass]
-    impl ObjectSubclass for NotifyApplication {
-        const NAME: &'static str = "NotifyApplication";
-        type Type = super::NotifyApplication;
+    impl ObjectSubclass for NtfyrApplication {
+        const NAME: &'static str = "NtfyrApplication";
+        type Type = super::NtfyrApplication;
         type ParentType = adw::Application;
     }
 
-    impl ObjectImpl for NotifyApplication {}
+    impl ObjectImpl for NtfyrApplication {}
 
-    impl ApplicationImpl for NotifyApplication {
+    impl ApplicationImpl for NtfyrApplication {
         fn activate(&self) {
-            debug!("AdwApplication<NotifyApplication>::activate");
+            debug!("AdwApplication<NtfyrApplication>::activate");
             self.parent_activate();
             self.obj().ensure_window_present();
         }
 
         fn startup(&self) {
-            debug!("AdwApplication<NotifyApplication>::startup");
+            debug!("AdwApplication<NtfyrApplication>::startup");
             self.parent_startup();
             let app = self.obj();
 
@@ -56,53 +55,54 @@ mod imp {
             app.setup_css();
             app.setup_gactions();
             app.setup_accels();
+            app.setup_autostart();
             // Karere-style background portal request at startup
-            std::thread::spawn(|| {
-                if let Ok(rt) = tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-                    rt.block_on(async {
-                        debug!("Requesting background permission at startup...");
-                        match ashpd::desktop::background::Background::request()
-                            .reason("Notify needs to run in the background to receive notifications.")
-                            .auto_start(true)
-                            .send()
-                            .await
-                        {
-                            Ok(response) => {
-                                 info!("Background permission requested: {:?}", response.response());
-                                 
-                                 // Use zbus directly to call SetStatus
-                                 async fn set_status_msg() -> anyhow::Result<()> {
-                                     let connection = zbus::Connection::session().await?;
-                                     let proxy = zbus::Proxy::new(
-                                         &connection, 
-                                         "org.freedesktop.portal.Desktop", 
-                                         "/org/freedesktop/portal/desktop", 
-                                         "org.freedesktop.portal.Background"
-                                     ).await?;
+            // Karere-style background portal request at startup
+            let settings = gio::Settings::new(APP_ID);
+            let autostart_enabled = settings.boolean("run-on-startup");
+            
+            crate::async_utils::RUNTIME.spawn(async move {
+                debug!("Requesting background permission at startup (autostart={})...", autostart_enabled);
+                match ashpd::desktop::background::Background::request()
+                    .reason("Ntfyr needs to run in the background to receive notifications.")
+                    .auto_start(autostart_enabled)
+                    .send()
+                    .await
+                {
+                    Ok(response) => {
+                         info!("Background permission requested: {:?}", response.response());
+                         
+                         // Use zbus directly to call SetStatus
+                         async fn set_status_msg() -> anyhow::Result<()> {
+                             let connection = zbus::Connection::session().await?;
+                             let proxy = zbus::Proxy::new(
+                                 &connection, 
+                                 "org.freedesktop.portal.Desktop", 
+                                 "/org/freedesktop/portal/desktop", 
+                                 "org.freedesktop.portal.Background"
+                             ).await?;
 
-                                     let mut options = std::collections::HashMap::new();
-                                     options.insert("message", zbus::zvariant::Value::from("Running in background"));
+                             let mut options = std::collections::HashMap::new();
+                             options.insert("message", zbus::zvariant::Value::from("Running in background"));
 
-                                     proxy.call_method("SetStatus", &(options)).await?;
-                                     Ok(())
-                                 }
+                             proxy.call_method("SetStatus", &(options)).await?;
+                             Ok(())
+                         }
 
-                                 if let Err(e) = set_status_msg().await {
-                                     warn!("Failed to set background status: {}", e);
-                                 } else {
-                                     debug!("Background status set.");
-                                 }
-                            }
-                            Err(e) => {
-                                 warn!("Failed to request background permission: {}", e);
-                            }
-                        }
-                    });
+                         if let Err(e) = set_status_msg().await {
+                             warn!("Failed to set background status: {}", e);
+                         } else {
+                             debug!("Background status set.");
+                         }
+                    }
+                    Err(e) => {
+                         warn!("Failed to request background permission: {}", e);
+                    }
                 }
             });
         }
         fn command_line(&self, command_line: &gio::ApplicationCommandLine) -> glib::ExitCode {
-            debug!("AdwApplication<NotifyApplication>::command_line");
+            debug!("AdwApplication<NtfyrApplication>::command_line");
             let arguments = command_line.arguments();
             let is_daemon = arguments.get(1).map(|x| x.to_str()) == Some(Some("--daemon"));
             let app = self.obj();
@@ -111,16 +111,12 @@ mod imp {
                 app.ensure_rpc_running();
             }
 
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                rt.block_on(async move {
-                    if let Err(e) = super::NotifyApplication::run_in_background(None).await {
-                        warn!(error = %e, "couldn't request running in background from portal");
-                    }
-                });
+            let settings = gio::Settings::new(crate::config::APP_ID);
+            let autostart = settings.boolean("run-on-startup");
+            crate::async_utils::RUNTIME.spawn(async move {
+                if let Err(e) = super::NtfyrApplication::run_in_background(None, autostart).await {
+                    warn!(error = %e, "couldn't request running in background from portal");
+                }
             });
 
             if is_daemon {
@@ -133,17 +129,17 @@ mod imp {
         }
     }
 
-    impl GtkApplicationImpl for NotifyApplication {}
-    impl AdwApplicationImpl for NotifyApplication {}
+    impl GtkApplicationImpl for NtfyrApplication {}
+    impl AdwApplicationImpl for NtfyrApplication {}
 }
 
 glib::wrapper! {
-    pub struct NotifyApplication(ObjectSubclass<imp::NotifyApplication>)
+    pub struct NtfyrApplication(ObjectSubclass<imp::NtfyrApplication>)
         @extends gio::Application, gtk::Application, adw::Application,
         @implements gio::ActionMap, gio::ActionGroup;
 }
 
-impl NotifyApplication {
+impl NtfyrApplication {
     fn ensure_window_present(&self) {
         if let Some(window) = { self.imp().window.borrow().upgrade() } {
             if window.is_visible() {
@@ -155,7 +151,7 @@ impl NotifyApplication {
         self.main_window().present();
     }
 
-    fn main_window(&self) -> NotifyWindow {
+    fn main_window(&self) -> NtfyrWindow {
         self.imp().window.borrow().upgrade().unwrap()
     }
 
@@ -273,7 +269,7 @@ impl NotifyApplication {
 
     fn setup_css(&self) {
         let provider = gtk::CssProvider::new();
-        provider.load_from_resource("/com/ranfdev/Notify/style.css");
+        provider.load_from_resource("/io/github/tobagin/Ntfyr/style.css");
         if let Some(display) = gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
                 &display,
@@ -285,7 +281,7 @@ impl NotifyApplication {
 
     fn show_about_dialog(&self) {
         let dialog = adw::AboutDialog::from_appdata(
-            "/com/ranfdev/Notify/com.ranfdev.Notify.metainfo.xml",
+            "/io/github/tobagin/Ntfyr/io.github.tobagin.Ntfyr.metainfo.xml",
             None,
         );
         if let Some(w) = self.imp().window.borrow().upgrade() {
@@ -294,7 +290,7 @@ impl NotifyApplication {
     }
 
     fn show_preferences(&self) {
-        let win = crate::widgets::NotifyPreferences::new(
+        let win = crate::widgets::NtfyrPreferences::new(
             self.main_window().imp().notifier.get().unwrap().clone(),
         );
         win.present(Some(&self.main_window()));
@@ -335,20 +331,20 @@ impl NotifyApplication {
                 None
             };
 
+            // Convert identifier to string to be Send
+            let identifier_str = identifier.map(|id| id.to_string());
+
+            let settings = gio::Settings::new(crate::config::APP_ID);
+            let autostart = settings.boolean("run-on-startup");
+
             // Run the portal request in a background thread to avoid blocking and provide a reactor for zbus
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap();
-                rt.block_on(async move {
-                    info!("Calling run_in_background from background thread");
-                    if let Err(e) = Self::run_in_background(identifier).await {
-                         warn!("Failed to update autostart portal: {}", e);
-                    } else {
-                        info!("Autostart portal updated");
-                    }
-                });
+            crate::async_utils::RUNTIME.spawn(async move {
+                info!("Calling run_in_background from background thread");
+                if let Err(e) = Self::run_in_background(identifier_str, autostart).await {
+                     warn!("Failed to update autostart portal: {}", e);
+                } else {
+                    info!("Autostart portal updated");
+                }
             });
         });
     }
@@ -359,36 +355,47 @@ impl NotifyApplication {
     }
 
 
-    async fn run_in_background(identifier: Option<ashpd::WindowIdentifier>) -> ashpd::Result<()> {
-        let settings = gio::Settings::new(APP_ID);
-        let autostart = settings.boolean("run-on-startup");
+    async fn run_in_background(identifier: Option<String>, autostart: bool) -> anyhow::Result<()> {
         info!(autostart_request = autostart, "Initiating background portal request");
 
-        let request = ashpd::desktop::background::Background::request()
-            .reason("Receive notifications in the background")
-            .auto_start(autostart)
-            .command(&["notify", "--daemon"])
-            .dbus_activatable(false);
-        
-        let response = if let Some(id) = identifier {
-            info!("Using window identifier for portal request");
-            request.identifier(id).send().await?.response()?
-        } else {
-            info!("No window identifier available for portal request");
-            request.send().await?.response()?
-        };
+        let connection = zbus::Connection::session().await?;
+        let proxy = zbus::Proxy::new(
+            &connection,
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Background",
+        )
+        .await?;
 
-        warn!(
-            portal_auto_start = %response.auto_start(), 
-            portal_run_in_background = %response.run_in_background(),
-            "Portal background request result"
-        );
+        let mut options = std::collections::HashMap::new();
+        options.insert("reason", zbus::zvariant::Value::from("Receive notifications in the background"));
+        options.insert("autostart", zbus::zvariant::Value::from(autostart));
+        options.insert("commandline", zbus::zvariant::Value::from(vec!["ntfyr", "--daemon"]));
+        options.insert("dbus_activatable", zbus::zvariant::Value::from(false));
+
+        let parent_window = identifier.unwrap_or_default();
+
+        let request_path: zbus::zvariant::OwnedObjectPath = proxy
+            .call_method("RequestBackground", &(&parent_window, &options))
+            .await?
+            .body()
+            .deserialize()?;
+
+        // We should technically wait for the Response signal on the request_path,
+        // but for autostart setup we might not strictly need the user response confirmation immediately
+        // if we just want to trigger the portal prompt/registration. 
+        // However, ashpd normally waits.
+        // For simplicity and to avoid complex signal handling code here, we check if we got a request path.
+        
+        info!(request_path = %request_path, "Background portal request initiated");
 
         Ok(())
     }
 
+
+
     fn ensure_rpc_running(&self) {
-        let dbpath = glib::user_data_dir().join("com.ranfdev.Notify.sqlite");
+        let dbpath = glib::user_data_dir().join("io.github.tobagin.Ntfyr.sqlite");
         info!(database_path = %dbpath.display());
 
         // Here I'm sending notifications to the desktop environment and listening for network changes.
@@ -463,17 +470,17 @@ impl NotifyApplication {
     fn build_window(&self) {
         let ntfy = self.imp().ntfy.get().unwrap();
 
-        let window = NotifyWindow::new(self, ntfy.clone());
+        let window = NtfyrWindow::new(self, ntfy.clone());
         *self.imp().window.borrow_mut() = window.downgrade();
     }
 }
 
-impl Default for NotifyApplication {
+impl Default for NtfyrApplication {
     fn default() -> Self {
         glib::Object::builder()
             .property("application-id", APP_ID)
             .property("flags", gio::ApplicationFlags::HANDLES_COMMAND_LINE)
-            .property("resource-base-path", "/com/ranfdev/Notify/")
+            .property("resource-base-path", "/io/github/tobagin/Ntfyr/")
             .build()
     }
 }

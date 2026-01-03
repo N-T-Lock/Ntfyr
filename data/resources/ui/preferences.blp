@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $NotifyPreferences : Adw.PreferencesDialog {
+template $NtfyrPreferences : Adw.PreferencesDialog {
   width-request: 240;
   height-request: 360;
 
@@ -13,6 +13,10 @@ template $NotifyPreferences : Adw.PreferencesDialog {
       title: "General";
       Adw.SwitchRow startup_switch {
         title: "Run on Startup";
+      }
+      Adw.SwitchRow sort_descending_switch {
+        title: "Sort descending";
+        subtitle: "Newest messages at the top";
       }
     }
 

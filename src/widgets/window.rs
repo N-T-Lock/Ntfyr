@@ -8,7 +8,7 @@ use ntfy_daemon::models;
 use ntfy_daemon::NtfyHandle;
 use tracing::warn;
 
-use crate::application::NotifyApplication;
+use crate::application::NtfyrApplication;
 use crate::config::{APP_ID, PROFILE};
 use crate::error::*;
 use crate::subscription::Status;
@@ -19,8 +19,8 @@ mod imp {
     use super::*;
 
     #[derive(gtk::CompositeTemplate)]
-    #[template(resource = "/com/ranfdev/Notify/ui/window.ui")]
-    pub struct NotifyWindow {
+    #[template(resource = "/io/github/tobagin/Ntfyr/ui/window.ui")]
+    pub struct NtfyrWindow {
         #[template_child]
         pub headerbar: TemplateChild<adw::HeaderBar>,
         #[template_child]
@@ -58,7 +58,7 @@ mod imp {
         pub banner_binding: Cell<Option<(Subscription, glib::SignalHandlerId)>>,
     }
 
-    impl Default for NotifyWindow {
+    impl Default for NtfyrWindow {
         fn default() -> Self {
             let this = Self {
                 headerbar: Default::default(),
@@ -88,7 +88,7 @@ mod imp {
     }
 
     #[gtk::template_callbacks]
-    impl NotifyWindow {
+    impl NtfyrWindow {
         #[template_callback]
         fn show_add_topic(&self, _btn: &gtk::Button) {
             let this = self.obj().clone();
@@ -121,9 +121,9 @@ mod imp {
     }
 
     #[glib::object_subclass]
-    impl ObjectSubclass for NotifyWindow {
-        const NAME: &'static str = "NotifyWindow";
-        type Type = super::NotifyWindow;
+    impl ObjectSubclass for NtfyrWindow {
+        const NAME: &'static str = "NtfyrWindow";
+        type Type = super::NtfyrWindow;
         type ParentType = adw::ApplicationWindow;
 
         fn class_init(klass: &mut Self::Class) {
@@ -151,7 +151,7 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for NotifyWindow {
+    impl ObjectImpl for NtfyrWindow {
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
@@ -163,8 +163,8 @@ mod imp {
         }
     }
 
-    impl WidgetImpl for NotifyWindow {}
-    impl WindowImpl for NotifyWindow {
+    impl WidgetImpl for NtfyrWindow {}
+    impl WindowImpl for NtfyrWindow {
         // Save window state on delete event
         fn close_request(&self) -> glib::Propagation {
             if let Err(err) = self.obj().save_window_size() {
@@ -176,18 +176,18 @@ mod imp {
         }
     }
 
-    impl ApplicationWindowImpl for NotifyWindow {}
-    impl AdwApplicationWindowImpl for NotifyWindow {}
+    impl ApplicationWindowImpl for NtfyrWindow {}
+    impl AdwApplicationWindowImpl for NtfyrWindow {}
 }
 
 glib::wrapper! {
-    pub struct NotifyWindow(ObjectSubclass<imp::NotifyWindow>)
+    pub struct NtfyrWindow(ObjectSubclass<imp::NtfyrWindow>)
         @extends gtk::Widget, gtk::Window, gtk::ApplicationWindow, adw::ApplicationWindow,
         @implements gio::ActionMap, gio::ActionGroup, gtk::Root, gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Native, gtk::ShortcutManager;
 }
 
-impl NotifyWindow {
-    pub fn new(app: &NotifyApplication, notifier: NtfyHandle) -> Self {
+impl NtfyrWindow {
+    pub fn new(app: &NtfyrApplication, notifier: NtfyHandle) -> Self {
         let obj: Self = glib::Object::builder().property("application", app).build();
 
         if let Err(_) = obj.imp().notifier.set(notifier) {
@@ -200,6 +200,7 @@ impl NotifyWindow {
         obj.connect_entry_and_send_btn();
         obj.connect_code_btn();
         obj.connect_items_changed();
+        obj.connect_settings_changed();
         obj.selected_subscription_changed(None);
         obj.bind_flag_read();
 
@@ -255,6 +256,14 @@ impl NotifyWindow {
                     imp.stack.set_visible_child(&*imp.list_view);
                 }
             });
+    }
+
+    fn connect_settings_changed(&self) {
+        let settings = &self.imp().settings;
+        let this = self.clone();
+        settings.connect_changed(Some("sort-descending"), move |_, _| {
+            this.selected_subscription_changed(this.selected_subscription().as_ref());
+        });
     }
 
     fn add_subscription(&self, sub: models::Subscription) {
@@ -356,8 +365,28 @@ impl NotifyWindow {
         if let Some(sub) = sub {
             set_sensitive(true);
             imp.navigation_split_view.set_show_content(true);
+
+            let sort_descending = imp.settings.boolean("sort-descending");
+            let sorter = gtk::CustomSorter::new(move |a, b| {
+                let a = a.downcast_ref::<glib::BoxedAnyObject>().unwrap();
+                let a = a.borrow::<models::ReceivedMessage>();
+                let b = b.downcast_ref::<glib::BoxedAnyObject>().unwrap();
+                let b = b.borrow::<models::ReceivedMessage>();
+
+                let time_a = a.time;
+                let time_b = b.time;
+
+                if sort_descending {
+                    time_b.cmp(&time_a).into()
+                } else {
+                    time_a.cmp(&time_b).into()
+                }
+            });
+
+            let sort_model = gtk::SortListModel::new(Some(sub.imp().messages.clone()), Some(sorter));
+
             imp.message_list
-                .bind_model(Some(&sub.imp().messages), move |obj| {
+                .bind_model(Some(&sort_model), move |obj| {
                     let b = obj.downcast_ref::<glib::BoxedAnyObject>().unwrap();
                     let msg = b.borrow::<models::ReceivedMessage>();
 
