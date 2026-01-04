@@ -4,7 +4,7 @@ runtime-version: '49'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
-command: notify
+command: ntfyr
 finish-args:
   - --share=ipc
   - --share=network
@@ -43,5 +43,5 @@ modules:
       - type: git
         url: https://github.com/tobagin/Ntfyr
         tag: v0.1.0
-        commit: 78660678452c07e426115b8ff3737a342369d764
+        commit: fed6f43c6824951c3ca3d15abb6f2af6b789882d
       - cargo-sources.json
