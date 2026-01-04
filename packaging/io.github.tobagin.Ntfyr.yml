@@ -25,23 +25,16 @@ build-options:
     - --share=network
 modules:
   - name: capnproto
-    buildsystem: simple
-    subdir: c++
-    build-commands:
-      - autoreconf -i
-      - ./configure --prefix=/app --disable-static --enable-shared
-      - make -j $FLATPAK_BUILDER_N_JOBS
-      - make install
+    buildsystem: autotools
     sources:
-      - type: git
-        url: https://github.com/capnproto/capnproto.git
-        tag: v1.3.0
-        commit: 7dbb95989721016f8b590245ec7528c6ff03d1fe
+      - type: archive
+        url: https://capnproto.org/capnproto-c++-1.3.0.tar.gz
+        sha256: 098f824a495a1a837d56ae17e07b3f721ac86f8dbaf58896a389923458522108
   - name: ntfyr
     buildsystem: meson
     sources:
       - type: git
         url: https://github.com/tobagin/Ntfyr
         tag: v0.1.0
-        commit: fed6f43c6824951c3ca3d15abb6f2af6b789882d
+        commit: e555a8a6cb21aeb1e2ff8f215c4d5df322a1f776
       - cargo-sources.json
