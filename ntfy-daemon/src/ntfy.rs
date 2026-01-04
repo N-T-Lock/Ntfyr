@@ -1,14 +1,12 @@
 use crate::actor_utils::send_command;
-use crate::models::NullNetworkMonitor;
-use crate::models::NullNotifier;
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use futures::future::join_all;
 use futures::StreamExt;
 use std::{collections::HashMap, future::Future, sync::Arc};
-use tokio::select;
 use tokio::{
-    sync::{broadcast, mpsc, oneshot, RwLock},
-    task::{spawn_local, LocalSet},
+    select,
+    sync::{mpsc, oneshot, RwLock},
+    task::LocalSet,
 };
 use tracing::{error, info};
 
@@ -16,7 +14,7 @@ use crate::{
     http_client::HttpClient,
     message_repo::Db,
     models::{self, Account},
-    ListenerActor, ListenerCommand, ListenerConfig, ListenerHandle, SharedEnv, SubscriptionHandle,
+    ListenerConfig, ListenerHandle, SharedEnv, SubscriptionHandle,
 };
 
 const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
@@ -377,7 +375,7 @@ pub fn start(
         let handle_clone = handle.clone();
 
         // Send the handle back to the calling thread
-        handle_tx.send(handle.clone());
+        let _ = handle_tx.send(handle.clone());
 
         rt.block_on({
             let local_set = LocalSet::new();

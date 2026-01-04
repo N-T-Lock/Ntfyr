@@ -6,6 +6,7 @@ use gtk::{gio, glib};
 use tracing::debug;
 
 use crate::error::*;
+use super::NtfyrAccountDialog;
 
 mod imp {
     use ntfy_daemon::NtfyHandle;
@@ -20,17 +21,11 @@ mod imp {
         #[template_child]
         pub sort_descending_switch: TemplateChild<adw::SwitchRow>,
         #[template_child]
-        pub server_entry: TemplateChild<adw::EntryRow>,
+        pub startup_background_switch: TemplateChild<adw::SwitchRow>,
         #[template_child]
-        pub username_entry: TemplateChild<adw::EntryRow>,
-        #[template_child]
-        pub password_entry: TemplateChild<adw::PasswordEntryRow>,
-        #[template_child]
-        pub add_btn: TemplateChild<gtk::Button>,
+        pub add_account_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub added_accounts: TemplateChild<gtk::ListBox>,
-        #[template_child]
-        pub added_accounts_group: TemplateChild<adw::PreferencesGroup>,
         pub notifier: OnceCell<NtfyHandle>,
     }
 
@@ -39,12 +34,9 @@ mod imp {
             let this = Self {
                 startup_switch: Default::default(),
                 sort_descending_switch: Default::default(),
-                server_entry: Default::default(),
-                username_entry: Default::default(),
-                password_entry: Default::default(),
-                add_btn: Default::default(),
+                startup_background_switch: Default::default(),
+                add_account_btn: Default::default(),
                 added_accounts: Default::default(),
-                added_accounts_group: Default::default(),
                 notifier: Default::default(),
             };
 
@@ -96,14 +88,17 @@ impl NtfyrPreferences {
         settings
             .bind("sort-descending", &*obj.imp().sort_descending_switch, "active")
             .build();
+        settings
+            .bind("start-in-background", &*obj.imp().startup_background_switch, "active")
+            .build();
 
         // settings.connect_changed("run-on-startup") handled in application.rs
 
         let this = obj.clone();
-        obj.imp().add_btn.connect_clicked(move |btn| {
+        obj.imp().add_account_btn.connect_clicked(move |btn| {
             let this = this.clone();
             btn.error_boundary()
-                .spawn(async move { this.add_account().await });
+                .spawn(async move { this.on_add_account_clicked().await });
         });
         let this = obj.clone();
         obj.imp()
@@ -119,50 +114,146 @@ impl NtfyrPreferences {
         let accounts = imp.notifier.get().unwrap().list_accounts().await?;
         debug!("show_accounts: accounts found: {}", accounts.len());
 
-        imp.added_accounts_group.set_visible(!accounts.is_empty());
-
         while let Some(child) = imp.added_accounts.last_child() {
             imp.added_accounts.remove(&child);
         }
-        for a in accounts {
+
+        if accounts.is_empty() {
             let row = adw::ActionRow::builder()
-                .title(&a.server)
-                .subtitle(&a.username)
+                .title("No accounts configured")
+                .subtitle("Add an account to receive private notifications")
                 .build();
-            row.add_css_class("property");
-            row.add_suffix(&{
-                let btn = gtk::Button::builder()
-                    .icon_name("user-trash-symbolic")
-                    .build();
-                btn.add_css_class("flat");
-                let this = self.clone();
-                btn.connect_clicked(move |btn| {
-                    let this = this.clone();
-                    let a = a.clone();
-                    btn.error_boundary()
-                        .spawn(async move { this.remove_account(&a.server).await });
-                });
-                btn
-            });
+            let icon = gtk::Image::builder()
+                .icon_name("user-available-symbolic")
+                .pixel_size(32)
+                .margin_end(12)
+                .build();
+            row.add_prefix(&icon);
             imp.added_accounts.append(&row);
+        } else {
+            for a in accounts {
+                let row = adw::ActionRow::builder()
+                    .title(&a.server)
+                    .subtitle(&a.username)
+                    .build();
+                row.add_css_class("property");
+
+                // Details button
+                row.add_suffix(&{
+                    let btn = gtk::Button::builder()
+                        .icon_name("info-symbolic")
+                        .tooltip_text("View Details")
+                        .build();
+                    btn.add_css_class("flat");
+                    let server = a.server.clone();
+                    let username = a.username.clone();
+                    let this = self.clone();
+                    btn.connect_clicked(move |_| {
+                        let dialog = adw::AlertDialog::builder()
+                            .heading("Account Details")
+                            .body(format!("Server: {}\nUsername: {}", server, username))
+                            .build();
+                        dialog.add_response("ok", "OK");
+                        dialog.present(Some(&this));
+                    });
+                    btn
+                });
+
+                // Edit button
+                row.add_suffix(&{
+                    let btn = gtk::Button::builder()
+                        .icon_name("document-edit-symbolic")
+                        .tooltip_text("Edit Account")
+                        .build();
+                    btn.add_css_class("flat");
+                    let this = self.clone();
+                    let a = a.clone();
+                    btn.connect_clicked(move |btn| {
+                        let this = this.clone();
+                        let a = a.clone();
+                        btn.error_boundary()
+                            .spawn(async move { this.on_edit_account_clicked(&a).await });
+                    });
+                    btn
+                });
+
+                // Remove button
+                row.add_suffix(&{
+                    let btn = gtk::Button::builder()
+                        .icon_name("user-trash-symbolic")
+                        .tooltip_text("Remove Account")
+                        .build();
+                    btn.add_css_class("flat");
+                    btn.add_css_class("error");
+                    let this = self.clone();
+                    let a = a.clone();
+                    btn.connect_clicked(move |btn| {
+                        let this = this.clone();
+                        let a = a.clone();
+                        btn.error_boundary()
+                            .spawn(async move { this.remove_account(&a.server).await });
+                    });
+                    btn
+                });
+                imp.added_accounts.append(&row);
+            }
         }
         Ok(())
     }
-    pub async fn add_account(&self) -> anyhow::Result<()> {
-        let imp = self.imp();
-        let password = imp.password_entry.text();
-        let server = imp.server_entry.text();
-        let username = imp.username_entry.text();
 
-        imp.notifier
-            .get()
-            .unwrap()
-            .add_account(&server, &username, &password)
-            .await?;
-        self.show_accounts().await?;
+    pub async fn on_add_account_clicked(&self) -> anyhow::Result<()> {
+        let dialog = NtfyrAccountDialog::new();
+        dialog.set_title("Add Account");
+
+        let (sender, receiver) = async_channel::bounded(1);
+        dialog.connect_closure(
+            "save",
+            false,
+            glib::closure_local!(move |_dialog: NtfyrAccountDialog| {
+                let _ = sender.send_blocking(());
+            }),
+        );
+
+        dialog.present(Some(self));
+
+        if let Ok(()) = receiver.recv().await {
+            let (server, username, password) = dialog.account_data();
+            let n = self.imp().notifier.get().unwrap();
+            n.add_account(&server, &username, &password).await?;
+            self.show_accounts().await?;
+        }
 
         Ok(())
     }
+
+    pub async fn on_edit_account_clicked(&self, account: &ntfy_daemon::models::Account) -> anyhow::Result<()> {
+        let dialog = NtfyrAccountDialog::new();
+        dialog.set_account(account);
+
+        let (sender, receiver) = async_channel::bounded(1);
+        dialog.connect_closure(
+            "save",
+            false,
+            glib::closure_local!(move |_dialog: NtfyrAccountDialog| {
+                let _ = sender.send_blocking(());
+            }),
+        );
+
+        dialog.present(Some(self));
+
+        if let Ok(()) = receiver.recv().await {
+            let (server, username, password) = dialog.account_data();
+            let n = self.imp().notifier.get().unwrap();
+            // ntfy-daemon might not have an "update_account" but add_account
+            // with same server should overwrite or we remove and add.
+            // Let's check ntfy-daemon/src/ntfy.rs if possible or just try add_account.
+            n.add_account(&server, &username, &password).await?;
+            self.show_accounts().await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn remove_account(&self, server: &str) -> anyhow::Result<()> {
         self.imp()
             .notifier

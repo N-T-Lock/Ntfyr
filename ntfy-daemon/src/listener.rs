@@ -4,13 +4,13 @@ use std::time::Duration;
 use futures::{StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt;
-use tokio::task::{self, spawn_local, LocalSet};
+use tokio::task::{spawn_local, LocalSet};
 use tokio::{
     select,
     sync::{mpsc, oneshot},
 };
 use tokio_stream::wrappers::LinesStream;
-use tracing::{debug, error, info, warn, Instrument, Span};
+use tracing::{debug, error, info, warn, Instrument};
 
 use crate::credentials::Credentials;
 use crate::http_client::HttpClient;

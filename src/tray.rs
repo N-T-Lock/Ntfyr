@@ -68,40 +68,18 @@ impl ksni::Tray for NtfyrTray {
                 activate: Box::new(|_| {
                     glib::MainContext::default().invoke(move || {
                         if let Some(app) = gio::Application::default() {
-                            // We can use helper methods providing we expose them or use actions
-                            // Since we are in the same crate, we can cast to NtfyrApplication
-                            // But controlling window directly might be cleaner via actions?
-                            // Karere uses manual window control.
-                            // NtfyrApplication has ensure_window_present.
-                            // It doesn't seem to have a public "hide" method but we can use actions.
-                            // Or we can implement it here.
-                            // NtfyrApplication has `window` RefCell<WeakRef<NtfyrWindow>>
-                            // access it is restricted (imp module).
-                            // BUT NtfyrApplication is a public struct in application.rs
-                            // The fields are in `imp` struct.
-                            // We can use `app.activate_action("window.close", None)` to hide?
-                            // No, "window.close" (Control+W) usually closes the window which *might* mean hide if it's a daemon?
-                            // In `NtfyrApplication::setup_gactions`:
-                            // action_quit -> closes window and quits.
-                            // There is no explicit "hide" action.
-                            // However, standard GtkApplicationWindow behavior: if you close the last window, and application has hold count, it keeps running.
-                            // So `window.close()` is effectively "Hide" if the daemon is running.
-                            // BUT if we want to "Show", we need `ensure_window_present()`.
-                            // NtfyrApplication methods like `ensure_window_present` are private (fn ensure_window_present).
-                            // Wait, `ensure_window_present` is not `pub`.
-                            // I should probably expose a "toggle-window" action.
-                            // Or make `ensure_window_present` public.
-                            // Let's invoke an action "app.toggle-window" which I should add?
-                            // Or use "activate" which calls `ensure_window_present`.
-                            // `app.activate()` calls `ensure_window_present()`.
-                            // So to SHOW, we can call `app.activate()`.
-                            // To HIDE (close window), we can find the window and close it?
-                            // application.rs: `action_quit` closes window:
-                            // `if let Some(win) = app.imp().window.borrow().upgrade() { win.close(); }`
-                            // So I can implement a "toggle-window" action in application.rs that does exactly this.
-                            // Does it toggle? No.
-                            // So I should add an action "toggle-window".
-                            app.activate_action("toggle-window", None);
+                            if let Ok(gtk_app) = app.clone().downcast::<gtk::Application>() {
+                                if let Some(window) = gtk_app.windows().first() {
+                                    if window.is_visible() {
+                                        window.set_visible(false);
+                                    } else {
+                                        window.present();
+                                    }
+                                } else {
+                                     // Fallback to action if no window found
+                                     app.activate_action("toggle-window", None);
+                                }
+                            }
                         }
                     });
                 }),

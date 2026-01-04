@@ -252,3 +252,24 @@ impl MessageRow {
         btn
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_markdown_to_pango() {
+        assert_eq!(markdown_to_pango("hello"), "hello");
+        assert_eq!(markdown_to_pango("**bold**"), "<b>bold</b>");
+        assert_eq!(markdown_to_pango("*italic*"), "<i>italic</i>");
+        assert_eq!(
+            markdown_to_pango("[link](https://example.com)"),
+            "<a href=\"https://example.com\">link</a>"
+        );
+        assert_eq!(markdown_to_pango("`code`"), "<tt>code</tt>");
+        assert_eq!(
+            markdown_to_pango("multiple **lines**\n*and* formats"),
+            "multiple <b>lines</b>\n<i>and</i> formats"
+        );
+    }
+}

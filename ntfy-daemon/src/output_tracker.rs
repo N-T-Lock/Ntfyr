@@ -3,6 +3,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use tokio::sync::RwLock;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct OutputTracker<T> {
     store: Rc<RefCell<Option<Vec<T>>>>,
 }
@@ -15,6 +16,7 @@ impl<T> Default for OutputTracker<T> {
     }
 }
 
+#[allow(dead_code)]
 impl<T: Clone> OutputTracker<T> {
     pub fn enable(&self) {
         let mut inner = self.store.borrow_mut();
@@ -50,6 +52,7 @@ impl<T> Default for OutputTrackerAsync<T> {
 }
 
 impl<T: Clone> OutputTrackerAsync<T> {
+    #[allow(dead_code)]
     pub async fn enable(&self) {
         let mut inner = self.store.write().await;
         if inner.is_none() {
@@ -61,6 +64,7 @@ impl<T: Clone> OutputTrackerAsync<T> {
             v.push(item);
         }
     }
+    #[allow(dead_code)]
     pub async fn items(&self) -> Vec<T> {
         if let Some(v) = &*self.store.read().await {
             v.clone()

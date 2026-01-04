@@ -6,6 +6,7 @@
     <file compressed="true" preprocess="xml-stripblanks">ui/window.ui</file>
     <file compressed="true" preprocess="xml-stripblanks">ui/subscription_info_dialog.ui</file>
     <file compressed="true" preprocess="xml-stripblanks">ui/preferences.ui</file>
+    <file compressed="true" preprocess="xml-stripblanks">ui/account_dialog.ui</file>
     <file compressed="true">style.css</file>
     <file compressed="true">io.github.tobagin.Ntfyr.metainfo.xml</file>
   </gresource>

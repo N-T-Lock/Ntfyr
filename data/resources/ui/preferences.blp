@@ -11,9 +11,6 @@ template $NtfyrPreferences : Adw.PreferencesDialog {
 
     Adw.PreferencesGroup {
       title: "General";
-      Adw.SwitchRow startup_switch {
-        title: "Run on Startup";
-      }
       Adw.SwitchRow sort_descending_switch {
         title: "Sort descending";
         subtitle: "Newest messages at the top";
@@ -21,26 +18,25 @@ template $NtfyrPreferences : Adw.PreferencesDialog {
     }
 
     Adw.PreferencesGroup {
-      title: "New Account";
-      Adw.EntryRow server_entry {
-        title: "Server";
+      title: "System";
+      Adw.SwitchRow startup_switch {
+        title: "Run on Startup";
       }
-      Adw.EntryRow username_entry {
-        title: "Username";
-      }
-      Adw.PasswordEntryRow password_entry {
-        title: "Password";
-      }
-      Gtk.Button add_btn {
-        margin-top: 8;
-        styles ["suggested-action"]
-        halign: end;
-        label: "Add";
+      Adw.SwitchRow startup_background_switch {
+        title: "Start in Background";
+        subtitle: "Start the application in the tray instead of showing the window";
       }
     }
 
-    Adw.PreferencesGroup added_accounts_group {
-      title: "Added Accounts";
+    Adw.PreferencesGroup {
+      title: "Accounts";
+
+      [header-suffix]
+      Gtk.Button add_account_btn {
+        icon-name: "list-add-symbolic";
+        styles ["flat"]
+        valign: center;
+      }
 
       Gtk.ListBox added_accounts {
         styles ["boxed-list"]

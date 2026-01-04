@@ -2,22 +2,50 @@ using Gtk 4.0;
 using Adw 1;
 
 Adw.ShortcutsDialog help_overlay {
-  ShortcutsSection {
-    section-name: "shortcuts";
-    max-height: 10;
+  Adw.ShortcutsSection {
+    title: C_("shortcut window", "General");
 
-    ShortcutsGroup {
-      title: C_("shortcut window", "General");
+    Adw.ShortcutsItem {
+      title: C_("shortcut window", "Show Shortcuts");
+      action-name: "app.shortcuts";
+    }
 
-      ShortcutsShortcut {
-        title: C_("shortcut window", "Show Shortcuts");
-        action-name: "win.show-help-overlay";
-      }
+    Adw.ShortcutsItem {
+      title: C_("shortcut window", "Preferences");
+      action-name: "app.preferences";
+    }
 
-      ShortcutsShortcut {
-        title: C_("shortcut window", "Quit");
-        action-name: "app.quit";
-      }
+    Adw.ShortcutsItem {
+      title: C_("shortcut window", "About");
+      action-name: "app.about";
+    }
+
+    Adw.ShortcutsItem {
+      title: C_("shortcut window", "Quit");
+      action-name: "app.quit";
+    }
+  }
+
+  Adw.ShortcutsSection {
+    title: C_("shortcut window", "Topics");
+
+    Adw.ShortcutsItem {
+      title: C_("shortcut window", "New Topic");
+      action-name: "win.add-topic";
+    }
+  }
+
+  Adw.ShortcutsSection {
+    title: C_("shortcut window", "Subscription");
+
+    Adw.ShortcutsItem {
+      title: C_("shortcut window", "Focus Message Entry");
+      action-name: "win.search";
+    }
+
+    Adw.ShortcutsItem {
+      title: C_("shortcut window", "Clear Notifications");
+      action-name: "win.clear-notifications";
     }
   }
 }

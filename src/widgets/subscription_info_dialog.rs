@@ -11,7 +11,7 @@ use crate::error::*;
 mod imp {
     pub use super::*;
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
-    #[template(resource = "/com/ranfdev/Notify/ui/subscription_info_dialog.ui")]
+    #[template(resource = "/io/github/tobagin/Ntfyr/ui/subscription_info_dialog.ui")]
     #[properties(wrapper_type = super::SubscriptionInfoDialog)]
     pub struct SubscriptionInfoDialog {
         #[property(get, construct_only)]

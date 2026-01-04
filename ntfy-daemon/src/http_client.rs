@@ -1,18 +1,17 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use reqwest::{header::HeaderMap, Client, Request, RequestBuilder, Response, ResponseBuilderExt};
-use serde_json::{json, Value};
+use reqwest::{header::HeaderMap, Client, Request, RequestBuilder, Response};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time;
 
-use crate::models;
 use crate::output_tracker::OutputTrackerAsync;
 
 // Structure to store request information for verification
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct RequestInfo {
     pub url: String,
     pub method: String,
@@ -66,6 +65,7 @@ impl HttpClient {
             request_tracker: Default::default(),
         }
     }
+    #[allow(dead_code)]
     pub fn new_nullable(client: NullableClient) -> Self {
         Self {
             client: Arc::new(client),
@@ -73,6 +73,7 @@ impl HttpClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn request_tracker(&self) -> OutputTrackerAsync<RequestInfo> {
         self.request_tracker.enable().await;
         self.request_tracker.clone()
@@ -96,6 +97,7 @@ impl HttpClient {
 }
 
 #[derive(Clone, Default)]
+#[allow(dead_code)]
 pub struct NullableClient {
     responses: Arc<RwLock<HashMap<String, VecDeque<Response>>>>,
     default_response: Arc<RwLock<Option<Box<dyn Fn() -> Response + Send + Sync + 'static>>>>,
@@ -103,11 +105,13 @@ pub struct NullableClient {
 
 /// Builder for configuring NullableClient
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct NullableClientBuilder {
     responses: HashMap<String, VecDeque<Response>>,
     default_response: Option<Box<dyn Fn() -> Response + Send + Sync + 'static>>,
 }
 
+#[allow(dead_code)]
 impl NullableClientBuilder {
     pub fn new() -> Self {
         Self::default()
@@ -180,6 +184,7 @@ impl NullableClientBuilder {
     }
 }
 
+#[allow(dead_code)]
 impl NullableClient {
     pub fn builder() -> NullableClientBuilder {
         NullableClientBuilder::new()

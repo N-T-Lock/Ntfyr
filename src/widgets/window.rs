@@ -142,6 +142,12 @@ mod imp {
                         .spawn(async move { sub.clear_notifications().await });
                 });
             });
+            klass.install_action("win.add-topic", None, |this, _, _| {
+                this.imp().show_add_topic(&gtk::Button::new());
+            });
+            klass.install_action("win.search", None, |this, _, _| {
+                this.imp().entry.grab_focus();
+            });
             //klass.bind_template_instance_callbacks();
         }
 
@@ -171,8 +177,9 @@ mod imp {
                 warn!(error = %err, "Failed to save window state");
             }
 
-            // Pass close request on to the parent
-            self.parent_close_request()
+            // Instead of closing, hide the window
+            self.obj().set_visible(false);
+            glib::Propagation::Stop
         }
     }
 

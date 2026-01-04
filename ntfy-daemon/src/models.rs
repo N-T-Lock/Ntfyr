@@ -391,7 +391,7 @@ impl NullNotifier {
     }
 }
 impl NotificationProxy for NullNotifier {
-    fn send(&self, n: Notification) -> anyhow::Result<()> {
+    fn send(&self, _n: Notification) -> anyhow::Result<()> {
         Ok(())
     }
 }

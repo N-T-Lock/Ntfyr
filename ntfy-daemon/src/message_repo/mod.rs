@@ -1,5 +1,4 @@
 use std::sync::{Arc, RwLock};
-use std::{cell::RefCell, rc::Rc};
 
 use rusqlite::{params, Connection, Result};
 use tracing::info;
@@ -97,14 +96,15 @@ impl Db {
     pub fn insert_subscription(&mut self, sub: models::Subscription) -> Result<(), Error> {
         let server_id = self.get_or_insert_server(&sub.server)?;
         self.conn.read().unwrap().execute(
-            "INSERT INTO subscription (server, topic, display_name, reserved, muted, archived) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO subscription (server, topic, display_name, reserved, muted, archived, read_until) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 server_id,
                 sub.topic,
                 sub.display_name,
                 sub.reserved,
                 sub.muted,
-                sub.archived
+                sub.archived,
+                sub.read_until
             ],
         )?;
         Ok(())

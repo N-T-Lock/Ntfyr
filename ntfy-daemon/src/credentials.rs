@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -83,6 +81,7 @@ struct NullableKeyring {
 }
 
 impl NullableKeyring {
+    #[allow(dead_code)]
     pub fn new(search_response: Vec<KeyringItem>) -> Self {
         Self { search_response }
     }

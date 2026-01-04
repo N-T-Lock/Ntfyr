@@ -46,7 +46,25 @@ mod imp {
         fn activate(&self) {
             debug!("AdwApplication<NtfyrApplication>::activate");
             self.parent_activate();
-            self.obj().ensure_window_present();
+            
+            let app = self.obj();
+            let settings = gio::Settings::new(crate::config::APP_ID);
+            let start_in_background = settings.boolean("start-in-background");
+            
+            // If the window already exists, it means the app was already running and 
+            // the user is activating it again (e.g. clicking the icon). In that case, 
+            // we should always present the window.
+            let has_window = app.imp().window.borrow().upgrade().is_some();
+            
+            if !start_in_background || has_window {
+                app.ensure_window_present();
+            } else {
+                debug!("Starting in background as requested by preferences");
+                // We still need to ensure RPC is running if it's the first activation
+                if self.hold_guard.get().is_none() {
+                    app.ensure_rpc_running();
+                }
+            }
         }
 
         fn startup(&self) {
@@ -70,51 +88,18 @@ mod imp {
             app.setup_gactions();
             app.setup_accels();
             app.setup_autostart();
-            // Karere-style background portal request at startup
+            
             // Karere-style background portal request at startup
             let settings = gio::Settings::new(APP_ID);
             let autostart_enabled = settings.boolean("run-on-startup");
             
             crate::async_utils::RUNTIME.spawn(async move {
-                debug!("Requesting background permission at startup (autostart={})...", autostart_enabled);
-                match ashpd::desktop::background::Background::request()
-                    .reason("Ntfyr needs to run in the background to receive notifications.")
-                    .auto_start(autostart_enabled)
-                    .send()
-                    .await
-                {
-                    Ok(response) => {
-                         info!("Background permission requested: {:?}", response.response());
-                         
-                         // Use zbus directly to call SetStatus
-                         async fn set_status_msg() -> anyhow::Result<()> {
-                             let connection = zbus::Connection::session().await?;
-                             let proxy = zbus::Proxy::new(
-                                 &connection, 
-                                 "org.freedesktop.portal.Desktop", 
-                                 "/org/freedesktop/portal/desktop", 
-                                 "org.freedesktop.portal.Background"
-                             ).await?;
-
-                             let mut options = std::collections::HashMap::new();
-                             options.insert("message", zbus::zvariant::Value::from("Running in background"));
-
-                             proxy.call_method("SetStatus", &(options)).await?;
-                             Ok(())
-                         }
-
-                         if let Err(e) = set_status_msg().await {
-                             warn!("Failed to set background status: {}", e);
-                         } else {
-                             debug!("Background status set.");
-                         }
-                    }
-                    Err(e) => {
-                         warn!("Failed to request background permission: {}", e);
-                    }
+                if let Err(e) = super::NtfyrApplication::run_in_background(None, autostart_enabled).await {
+                    warn!("Failed to request background permission at startup: {}", e);
                 }
             });
         }
+
         fn command_line(&self, command_line: &gio::ApplicationCommandLine) -> glib::ExitCode {
             debug!("AdwApplication<NtfyrApplication>::command_line");
             let arguments = command_line.arguments();
@@ -137,7 +122,14 @@ mod imp {
                 return glib::ExitCode::SUCCESS;
             }
 
-            app.ensure_window_present();
+            let start_in_background = settings.boolean("start-in-background");
+            let has_window = app.imp().window.borrow().upgrade().is_some();
+
+            if !start_in_background || has_window {
+                app.ensure_window_present();
+            } else {
+                debug!("Starting in background from command line as requested by preferences");
+            }
 
             glib::ExitCode::SUCCESS
         }
@@ -155,11 +147,9 @@ glib::wrapper! {
 
 impl NtfyrApplication {
     fn ensure_window_present(&self) {
-        if let Some(window) = { self.imp().window.borrow().upgrade() } {
-            if window.is_visible() {
-                window.present();
-                return;
-            }
+        if let Some(window) = self.imp().window.borrow().upgrade() {
+            window.present();
+            return;
         }
         self.build_window();
         self.main_window().present();
@@ -230,16 +220,8 @@ impl NtfyrApplication {
         let action_toggle_window = gio::ActionEntry::builder("toggle-window")
             .activate(move |app: &Self, _, _| {
                 if let Some(win) = app.imp().window.borrow().upgrade() {
-                    // If visible, close it (hide). If not visible, present it.
-                    // Note: close() might destroy it if not careful but since we have hold_guard, 
-                    // closing the window just hides it effectively until we rebuild/present it.
-                    // Actually, GtkWindow close() emits "close-request".
-                    // If we want to hide it without destroying, we should just set_visible(false)?
-                    // But standard behavior is closing destroys the widget.
-                    // NtfyrApplication::ensure_window_present() calls build_window() which creates new one.
-                    // So destroying is fine as long as app keeps running.
                     if win.is_visible() {
-                         win.close();
+                         win.set_visible(false);
                     } else {
                          win.present();
                     }
@@ -310,6 +292,10 @@ impl NtfyrApplication {
         self.set_accels_for_action("app.quit", &["<Control>q"]);
         self.set_accels_for_action("window.close", &["<Control>w"]);
         self.set_accels_for_action("app.shortcuts", &["<Control>question"]);
+        self.set_accels_for_action("app.preferences", &["<Control>comma"]);
+        self.set_accels_for_action("app.about", &["F1"]);
+        self.set_accels_for_action("win.add-topic", &["<Control>n"]);
+        self.set_accels_for_action("win.search", &["<Control>f"]);
     }
 
     fn setup_css(&self) {
@@ -403,14 +389,15 @@ impl NtfyrApplication {
         });
     }
 
+    #[allow(dead_code)]
     fn update_autostart_file(&self, _enable: bool) -> std::io::Result<()> {
-        // Handled in preferences.rs to match Karere
+        // Legacy method, not used in the portal-based autostart pattern
         Ok(())
     }
 
 
     async fn run_in_background(identifier: Option<String>, autostart: bool) -> anyhow::Result<()> {
-        info!(autostart_request = autostart, "Initiating background portal request");
+        info!(autostart_request = autostart, "Initiating background portal request via zbus");
 
         let connection = zbus::Connection::session().await?;
         let proxy = zbus::Proxy::new(
@@ -424,8 +411,9 @@ impl NtfyrApplication {
         let mut options = std::collections::HashMap::new();
         options.insert("reason", zbus::zvariant::Value::from("Receive notifications in the background"));
         options.insert("autostart", zbus::zvariant::Value::from(autostart));
+        // Note: portal expects "dbus-activatable" with a hyphen
         options.insert("commandline", zbus::zvariant::Value::from(vec!["ntfyr", "--daemon"]));
-        options.insert("dbus_activatable", zbus::zvariant::Value::from(false));
+        options.insert("dbus-activatable", zbus::zvariant::Value::from(false));
 
         let parent_window = identifier.unwrap_or_default();
 
@@ -435,13 +423,17 @@ impl NtfyrApplication {
             .body()
             .deserialize()?;
 
-        // We should technically wait for the Response signal on the request_path,
-        // but for autostart setup we might not strictly need the user response confirmation immediately
-        // if we just want to trigger the portal prompt/registration. 
-        // However, ashpd normally waits.
-        // For simplicity and to avoid complex signal handling code here, we check if we got a request path.
-        
         info!(request_path = %request_path, "Background portal request initiated");
+
+        // Karere pattern: also set status to ensure it appears in GNOME Background Apps
+        let mut status_options = std::collections::HashMap::new();
+        status_options.insert("message", zbus::zvariant::Value::from("Running in background"));
+        
+        if let Err(e) = proxy.call_method("SetStatus", &(status_options)).await {
+            warn!("Failed to set background status: {}", e);
+        } else {
+            debug!("Background status set successfully");
+        }
 
         Ok(())
     }

@@ -21,5 +21,9 @@
       <default>false</default>
       <summary>Sort messages by descending date</summary>
     </key>
+    <key name="start-in-background" type="b">
+      <default>false</default>
+      <summary>Start in background</summary>
+    </key>
   </schema>
 </schemalist>
