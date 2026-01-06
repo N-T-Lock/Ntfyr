@@ -465,28 +465,43 @@ impl NtfyrApplication {
 
         let app = self.clone();
         glib::MainContext::ref_thread_default().spawn_local(async move {
-            while let Ok(n) = r.recv().await {
-                let gio_notif = gio::Notification::new(&n.title);
-                gio_notif.set_body(Some(&n.body));
+            // Create the notification proxy once
+            let proxy = match ashpd::desktop::notification::NotificationProxy::new().await {
+                Ok(p) => p,
+                Err(e) => {
+                    error!("Failed to create notification proxy: {}", e);
+                    return;
+                }
+            };
 
-                let action_name = |a| {
-                    let json = serde_json::to_string(a).unwrap();
-                    gio::Action::print_detailed_name("app.message-action", Some(&json.into()))
-                };
+            let mut notification_counter = 0u32;
+            while let Ok(n) = r.recv().await {
+                // Create a unique notification ID
+                notification_counter = notification_counter.wrapping_add(1);
+                let notification_id = format!("ntfyr-notification-{}", notification_counter);
+
+                // Build portal notification
+                let mut portal_notif = ashpd::desktop::notification::Notification::new(&n.title);
+                portal_notif = portal_notif.body(n.body.as_str());
+                
+                // Add action buttons
                 for a in n.actions.iter() {
                     match a {
-                        models::Action::View { label, .. } => {
-                            gio_notif.add_button(&label, &action_name(a))
-                        }
-                        models::Action::Http { label, .. } => {
-                            gio_notif.add_button(&label, &action_name(a))
+                        models::Action::View { label, .. } | models::Action::Http { label, .. } => {
+                            let json = serde_json::to_string(a).unwrap();
+                            let button = ashpd::desktop::notification::Button::new(label, &json);
+                            portal_notif = portal_notif.button(button);
                         }
                         _ => {}
                     }
                 }
 
-                app.send_notification(None, &gio_notif);
-                app.set_unread(true);
+                // Send via portal
+                if let Err(e) = proxy.add_notification(&notification_id, portal_notif).await {
+                    error!("Failed to send notification via portal: {}", e);
+                } else {
+                    app.set_unread(true);
+                }
             }
         });
         struct Proxies {

@@ -12,7 +12,6 @@ finish-args:
   - --socket=wayland
   - --device=dri
   - --own-name=io.github.tobagin.Ntfyr
-  - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin

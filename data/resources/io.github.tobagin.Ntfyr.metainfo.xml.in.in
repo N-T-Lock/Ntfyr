@@ -46,6 +46,16 @@
 
   <content_rating type="oars-1.0" />
   <releases>
+    <release version="0.1.2" date="2026-01-06">
+        <description>
+            <p>Improved sandboxing and security with portal-based notifications.</p>
+            <ul>
+                <li>**Changed**: Refactored notification system to use XDG Desktop Portal instead of direct D-Bus access</li>
+                <li>**Improved**: Better sandboxing following Flatpak best practices</li>
+                <li>**Removed**: No longer requires org.freedesktop.Notifications D-Bus permission</li>
+            </ul>
+        </description>
+    </release>
     <release version="0.1.0" date="2026-01-04">
         <description>
             <p>Initial release of Ntfyr, a native client for ntfy.sh.</p>
