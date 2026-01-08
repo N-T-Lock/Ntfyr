@@ -368,7 +368,13 @@ pub fn start(
 
         // Create everything inside the new thread's runtime
         let credentials =
-            rt.block_on(async move { crate::credentials::Credentials::new().await.unwrap() });
+            rt.block_on(async move { 
+                let result = crate::credentials::Credentials::new().await 
+                match result {
+                    Ok(value) => value,
+                    Err(e) => error!(error = ?e, "Failed to start Secret Service"),
+                }
+            });
 
         let env = SharedEnv {
             db: Db::connect(&dbpath).unwrap(),
